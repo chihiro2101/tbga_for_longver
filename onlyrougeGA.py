@@ -46,8 +46,8 @@ class Summerizer(object):
         typeB = []
 
         
-        for i in range(int(amount/2)):
-        # for i in range(amount):
+        # for i in range(int(amount/2)):
+        for i in range(amount):
             #creat type A
             chromosome1 = np.zeros(self.num_objects)
             chromosome1[np.random.choice(list(range(self.num_objects)), self.num_picked_sents, replace=False)] = 1
@@ -77,6 +77,9 @@ class Summerizer(object):
         return population 
 
     def roulette_select(self, total_fitness, population):
+        ps = len(population)
+        if ps == 0:
+            return None
         fitness_slice = np.random.rand() * total_fitness
         fitness_so_far = 0.0
         for phenotype in population:
@@ -239,38 +242,42 @@ class Summerizer(object):
     def survivor_selection (self, individual , population, check, max_sent ):
         if len(population) > 4 :
             competing = random.sample(population, 4)
-            lowest_individual = min(competing , key = lambda x: x[2])
+            lowest_individual = max(competing , key = lambda x: x[2])
             if individual[2] > lowest_individual[2]:
                 check = 1
                 return individual, check
-            elif sum(lowest_individual[0]) <= max_sent:
+            else:
                 check = 1
                 return lowest_individual, check
         return individual, check
 
+
     def selection(self, population):
-        max_sent = int(len(self.sentences)*0.2)
+        max_sent = int(0.2*self.num_objects)
+        condition_for_survivor = 0 # khoong co survivor
+        tmp_popu = population.copy()
         new_population = []
         new_typeA = []
         new_typeB = []
-        population_for_exception = population.copy()
-                
+    
         
-        population[0] = sorted(population[0], key=lambda x: x[2], reverse=True)
-        population[1] = sorted(population[1], key=lambda x: x[2], reverse=True)
 
-        chosen_agents_A = int(0.1*len(population[0]))
-        chosen_agents_B = int(0.1*len(population[1]))
+
+        if condition_for_survivor == 1:
+            population[0] = sorted(population[0], key=lambda x: x[2], reverse=True)
+            population[1] = sorted(population[1], key=lambda x: x[2], reverse=True)
+            chosen_agents_A = int(0.1*len(population[0]))
+            chosen_agents_B = int(0.1*len(population[1]))
+            
+            elitismA = population[0][ : chosen_agents_A ]
+            new_typeA = elitismA
+
+            elitismB = population[1][ : chosen_agents_B]
+            new_typeB = elitismB
+
+            population[0] = population[0][ chosen_agents_A :]
+            population[1] = population[1][ chosen_agents_B :]
         
-        elitismA = population[0][ : chosen_agents_A ]
-        new_typeA = elitismA
-
-        elitismB = population[1][ : chosen_agents_B]
-        new_typeB = elitismB
-
-        population[0] = population[0][ chosen_agents_A :]
-        population[1] = population[1][ chosen_agents_B :]
-
         total_fitness = 0
         for indivi in population[1]:
             total_fitness = total_fitness + indivi[2]  
@@ -279,33 +286,27 @@ class Summerizer(object):
         cpop = 0.0
 
         #chọn cá thể  loại A bằng rank_selection, cá thể loại B bằng RW
-        max_time = time.time()
         while cpop <= population_size:
-            if time.time() - max_time > 100:
-                return population_for_exception
             population[0] = sorted(population[0], key=lambda x: x[2], reverse=True)
-            parent_1 = None
 
+            parent_1 = None
             check_time_1 = time.time()
             while parent_1 == None:
                 parent_1 = self.rank_select(population[0])
-                if parent_1 == None and (time.time() - check_time_1) > 30:
-                    try:
-                        parent_1 = random.choice(population[0])
-                    except:
-                        return population_for_exception
+                if parent_1 == None and (time.time() - check_time_1) > 60:
+                    return tmp_popu
+
             parent_2 = None
             check_time_2 = time.time()
             while parent_2 == None :
                 parent_2 = self.roulette_select(total_fitness, population[1])
-                if parent_2 == None and (time.time() - check_time_2) > 30:
-                    try:
-                        parent_2 =  random.choice(population[1])
-                    except:
-                        return population_for_exception
+                if parent_2 == None and (time.time() - check_time_2) > 60:
+                    return tmp_popu
+
                 if parent_2 != None:
                     if self.compare(parent_2[0], parent_1[0]) or self.compare(parent_2[0], parent_1[1]):
                         parent_2 = self.roulette_select(total_fitness, population[1])
+
 
             parent_1, parent_2 = copy(parent_1), copy(parent_2)
             child_1, child_2 = self.crossover(parent_1, parent_2, max_sent)
@@ -315,38 +316,53 @@ class Summerizer(object):
 
             # child_1
             individual_X = self.mutate(child_1, max_sent)
-
-            #Nếu X loại B:
-            if len(individual_X[1]) == 0:
-                individual_X , check1 = self.survivor_selection(individual_X, population[1], check1, max_sent)
-                if check1 == 1:
-                    new_typeB.append(individual_X)
-            else:
-                individual_X , check1 = self.survivor_selection(individual_X, population[0], check1, max_sent)
-                if check1 == 1:
-                    new_typeA.append(individual_X)
-
             # child_2
             individual_Y = self.mutate(child_2, max_sent)
 
-            #Nếu Y loại B:
-            if len(individual_Y[1]) == 0:
-                individual_Y , check1 = self.survivor_selection(individual_Y, population[1], check2, max_sent)
-                if check2 == 1:
-                    new_typeB.append(individual_Y)
+            if condition_for_survivor == 1:
+                #Nếu X loại B:
+                if len(individual_X[1]) == 0:
+                    individual_X , check1 = self.survivor_selection(individual_X, population[1], check1, max_sent)
+                    if check1 == 1:
+                        new_typeB.append(individual_X)
+                else:
+                    individual_X , check1 = self.survivor_selection(individual_X, population[0], check1, max_sent)
+                    if check1 == 1:
+                        new_typeA.append(individual_X)
+
+                #Nếu Y loại B:
+                if len(individual_Y[1]) == 0:
+                    individual_Y , check1 = self.survivor_selection(individual_Y, population[1], check2, max_sent)
+                    if check2 == 1:
+                        new_typeB.append(individual_Y)
+                else:
+                    individual_Y , check1 = self.survivor_selection(individual_Y, population[0], check2, max_sent)
+                    if check2 == 1:
+                        new_typeA.append(individual_Y)
+
             else:
-                individual_Y , check1 = self.survivor_selection(individual_Y, population[0], check2, max_sent)
-                if check2 == 1:
-                    new_typeA.append(individual_Y)
+                check1 = 1
+                check2 = 1
+                if len(individual_X[1]) == 0:
+                    tmp_popu[1].append(individual_X)
+                else:
+                    tmp_popu[0].append(individual_X)
+                if len(individual_Y[1]) == 0:
+                    tmp_popu[1].append(individual_Y)
+                else:
+                    tmp_popu[0].append(individual_Y)
 
             if check1 + check2 == 0:
-                cpop += 0.01
+                cpop += 0.1
             else:
                 cpop += check1 + check2
 
-        new_population.append(new_typeA)
-        new_population.append(new_typeB)
+        if condition_for_survivor == 0:
+            new_typeA = sorted(tmp_popu[0], key=lambda x: x[2], reverse=True)[:self.population_size]
+            new_typeB = sorted(tmp_popu[1], key=lambda x: x[2], reverse=True)[:self.population_size]
 
+        new_population.append(new_typeA)
+        new_population.append(new_typeB)        
         fitness_value = []
         for individual in new_typeA:
             fitness_value.append(individual[2])
@@ -355,7 +371,7 @@ class Summerizer(object):
         try:
             avg_fitness = sta.mean(fitness_value)
         except: 
-            return population_for_exception
+            return tmp_popu
         agents_in_Ev = [] 
 
         for agent in new_typeA:
@@ -366,7 +382,8 @@ class Summerizer(object):
                 agents_in_Ev.append(agent)
 
 
-        if len(agents_in_Ev) >= self.population_size*0.9 :
+        if len(agents_in_Ev) >= self.population_size*0.9:
+
             new_population = self.generate_population(int(self.population_size*0.7))
             chosen = self.population_size - int(self.population_size*0.7)
 
@@ -386,10 +403,11 @@ class Summerizer(object):
             new_population = []
             new_population.append(type_A)
             new_population.append(type_B)
+
         return new_population 
     
 
-    def find_best_individual(self, population):
+    def find_best_individual(self, population, final_res):
         try:
             population[0] = sorted(population[0], key=lambda x: x[2], reverse=True)
             population[1] = sorted(population[1], key=lambda x: x[2], reverse=True)
@@ -399,38 +417,60 @@ class Summerizer(object):
                 fitness1 = compute_fitness(self.title, self.sentences, best_type_A[0], self.rougeforsentences, self.abstract, self.order_params)
                 fitness2 = compute_fitness(self.title, self.sentences, best_type_A[1], self.rougeforsentences, self.abstract, self.order_params)
                 if fitness1 >= fitness2:
-                    return (best_type_A[0], fitness1)
+                    best = (best_type_A[0], fitness1)
                 else:
-                    return (best_type_A[1], fitness2)
-            return (best_type_B[0], best_type_B[2])
+                    best = (best_type_A[1], fitness2)
+            else:
+                best = (best_type_B[0], best_type_B[2])
+                
+            if best[1] >= final_res[2]:
+                return best
+            else:
+                fitness1 = compute_fitness(self.title, self.sentences, final_res[0], self.rougeforsentences, self.abstract, self.order_params)
+                fitness2 = compute_fitness(self.title, self.sentences, final_res[1], self.rougeforsentences, self.abstract, self.order_params)
+                if fitness1 >= fitness2:
+                    best = (final_res[0], fitness1)
+                else:
+                    best = (final_res[1], fitness2)
+                return best
+       
         except:
             return None
- 
+
+
+
     def check_best(self, arr):
-        if len(arr) > 10:
-            reversed_arr = arr[::-1][:10]
+        if len(arr) > 20:
+            reversed_arr = arr[::-1][:20]
             if reversed_arr[0] > reversed_arr[-1]:
                 return True
             else: 
                 return False
         else:
             return True
-   #MASingleDocSum    
+
+
+
     def solve(self):
         population = self.generate_population(self.population_size)
         best_individual = sorted(population[0], key=lambda x: x[2], reverse=True)[0]
-        best_fitness_value = best_individual[1]
+        best_fitness_value = best_individual[0]
         tmp_arr = []
-        tmp_arr.append(best_fitness_value)
+        tmp_arr.append(best_fitness_value[2])
         count = 0
-    
-        while count < self.max_generation and self.check_best(tmp_arr) == True:
+        final_res = best_individual
+        while count < self.max_generation and (self.check_best(tmp_arr) == True):
             population = self.selection(population)
-            best_individual = sorted(population[0], key=lambda x: x[1], reverse=True)[0]
-            best_fitness_value = best_individual[1]  
-            tmp_arr.append(best_fitness_value)          
+            try:
+                best_individual = sorted(population[0], key=lambda x: x[2], reverse=True)[0]
+            except:
+                return None
+            best_fitness_value = best_individual[2]  
+            tmp_arr.append(best_fitness_value)  
+            if final_res[2] < best_individual[2]:
+                final_res = best_individual
             count +=1
-        return self.find_best_individual(population)
+        return self.find_best_individual(population, final_res)
     
     
     def show(self, individual,  file):
@@ -539,6 +579,7 @@ def start_run(processID, POPU_SIZE, MAX_GEN, CROSS_RATE, MUTATE_RATE, sub_storie
         
     
 def multiprocess(num_process, POPU_SIZE, MAX_GEN, CROSS_RATE, MUTATE_RATE, stories, save_path):
+    print("The number of processes %d" %(num_process))
     processes = []
     n = math.floor(len(stories)/5)
     set_of_docs = [stories[i:i + n] for i in range(0, len(stories), n)] 
@@ -554,8 +595,8 @@ def multiprocess(num_process, POPU_SIZE, MAX_GEN, CROSS_RATE, MUTATE_RATE, stori
 
 def main():
     # Setting Variables
-    POPU_SIZE = 30
-    MAX_GEN = 20
+    POPU_SIZE = 40
+    MAX_GEN = 100
     CROSS_RATE = 0.8
     MUTATE_RATE = 0.4
 
